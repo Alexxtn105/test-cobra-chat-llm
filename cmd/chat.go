@@ -5,8 +5,12 @@ package cmd
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"github.com/spf13/cobra"
+	"github.com/tmc/langchaingo/llms"
+	"github.com/tmc/langchaingo/llms/openai"
+	"log"
 	"os"
 	"os/signal"
 	"strings"
@@ -33,6 +37,28 @@ var chatCmd = &cobra.Command{
 			os.Exit(0)
 		}()
 
+		// подключаем LLM
+		llm, err := openai.New()
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		// берем контекст
+		ctx := context.Background()
+
+		// Вводим инициализирующую строку
+		fmt.Print("Введите инициализирующую строку для LLM: ")
+		// читаем введенное пользователем
+		initialPrompt, _ := reader.ReadString('\n')
+		initialPrompt = strings.TrimSpace(initialPrompt)
+		// инициализируем слайс для хранения сообщений
+		content := []llms.MessageContent{
+			llms.TextParts(llms.ChatMessageTypeSystem, initialPrompt),
+		}
+		//fmt.Println(content)
+		// Уведомляем пользователя, что инициализирующая строка принята
+		fmt.Println("Инициализирующая строка принята. Переходим в чат...")
+
 		//создаем бесконечный цикл, в котором пользователь может вводить текст
 		for {
 			// пишем строку приглашения
@@ -48,7 +74,44 @@ var chatCmd = &cobra.Command{
 				fmt.Println("Выход из программы...")
 				os.Exit(0)
 			default:
-				fmt.Println("Вы сказали: ", input) // отправляем пользователю введенную строку
+				// Process user input with the LLM here
+				response := ""
+				content = append(content, llms.TextParts(llms.ChatMessageTypeHuman, input))
+				_, err := llm.GenerateContent(ctx, content,
+					llms.WithMaxTokens(1024),
+					llms.WithStreamingFunc(func(ctx context.Context, chunk []byte) error {
+						fmt.Print(string(chunk))
+						response = response + string(chunk)
+						return nil
+					}),
+				)
+				//fmt.Println(resp)
+				if err != nil {
+					fmt.Println("error:" + err.Error())
+				} else {
+					content = append(content, llms.TextParts(llms.ChatMessageTypeSystem, response))
+				}
+				//// обрабатываем введенные пользователем данные с помощью LLM
+				//response := ""
+				////fmt.Println("Вы сказали: ", input) // отправляем пользователю введенную строку
+				//
+				//// дописываем пользовательское сообщение как от человека (human)
+				//content = append(content, llms.TextParts(llms.ChatMessageTypeHuman, input))
+				//// генерим контент
+				//llm.GenerateContent(
+				//	ctx,
+				//	content,
+				//	llms.WithMaxTokens(1024),
+				//	llms.WithStreamingFunc(func(ctx context.Context, chunk []byte) error {
+				//		fmt.Print(string(chunk))
+				//		response += string(chunk)
+				//		return nil
+				//	}),
+				//)
+				//
+				//// дописываем сообщение как системное (system)
+				//content = append(content, llms.TextParts(llms.ChatMessageTypeSystem, response))
+
 			}
 		}
 	},
